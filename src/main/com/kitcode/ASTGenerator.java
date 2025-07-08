@@ -15,8 +15,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.antlr.v4.runtime.ANTLRInputStream;
+import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.RecognitionException;
+import org.antlr.v4.runtime.Recognizer;
 import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
 
@@ -73,12 +76,33 @@ public class ASTGenerator {
         Java8Lexer lexer = new Java8Lexer(input);
         CommonTokenStream tokens = new CommonTokenStream(lexer);
         Java8Parser parser = new Java8Parser(tokens);
+        
+        // Add error listener to detect parsing errors
+        parser.removeErrorListeners();
+        parser.addErrorListener(new BaseErrorListener() {
+            @Override
+            public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line, int charPositionInLine, String msg, RecognitionException e) {
+                System.err.println("Parsing error in " + javaFile.getName() + " at line " + line + ":" + charPositionInLine + " - " + msg);
+            }
+        });
+        
         ParserRuleContext ctx = parser.compilationUnit();
+        
+        // Check if parsing was successful
+        if (parser.getNumberOfSyntaxErrors() > 0) {
+            System.err.println("Skipping " + javaFile.getName() + " due to syntax errors");
+            return;
+        }
 
         generateAST(ctx, false, 0);
 
+        File graphsDir = new File("graphs");
+        if (!graphsDir.exists()) {
+            graphsDir.mkdirs();
+        }
+        
         String fileName = javaFile.getName().replace(".java", ".dot");
-        String outputPath = "resource/java/" + fileName;
+        String outputPath = "graphs/" + fileName;
         
         try (FileWriter writer = new FileWriter(outputPath)) {
             writer.write("digraph G {\n");
@@ -100,7 +124,12 @@ public class ASTGenerator {
     
     private static void writeLabel(FileWriter writer) throws IOException {
         for(int i =0; i<LineNum.size(); i++){
-            writer.write(LineNum.get(i)+i+"[label=\""+Type.get(i)+"\\n "+Content.get(i)+" \"]\n");
+            String escapedContent = Content.get(i).replace("\\", "\\\\")
+                                                  .replace("\"", "\\\"")
+                                                  .replace("\n", "\\n")
+                                                  .replace("\r", "\\r")
+                                                  .replace("\t", "\\t");
+            writer.write(LineNum.get(i)+i+"[label=\""+Type.get(i)+"\\n "+escapedContent+" \"]\n");
         }
     }
     
